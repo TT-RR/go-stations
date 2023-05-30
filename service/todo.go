@@ -38,18 +38,6 @@ func (s *TODOService) CreateTODO(ctx context.Context, subject, description strin
 		return nil, err
 	}
 
-	defer func() {
-		if p := recover(); p != nil {
-			tx.Rollback()
-			panic(p)
-		} else if err != nil {
-			tx.Rollback()
-		} else {
-			//これがないとデータベースに反映されない
-			err = tx.Commit()
-		}
-	}()
-
 	// PrepareContextを使用してSQLステートメントを準備
 	stmt, err := tx.PrepareContext(ctx, insert)
 	if err != nil {
@@ -59,7 +47,17 @@ func (s *TODOService) CreateTODO(ctx context.Context, subject, description strin
 
 	// ExecContextを使用してTODOを保存し、保存されたTODOのIDを取得
 	result, err := stmt.ExecContext(ctx, subject, description)
+	if err != nil {
+		return nil, err
+	}
+
 	id, err := result.LastInsertId()
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
 
 	// QueryRowContextを使用して保存したTODOを取得
 	row := s.db.QueryRowContext(ctx, confirm, id)
@@ -67,9 +65,9 @@ func (s *TODOService) CreateTODO(ctx context.Context, subject, description strin
 	var createdTodo model.TODO
 	err = row.Scan(&createdTodo.ID, &createdTodo.Subject, &createdTodo.Description, &createdTodo.CreatedAt)
 	if err != nil {
-		return fmt.Println("row.Scan error: ")
+		return nil, err
 	}
-	return nil, nil
+	return &createdTodo, nil
 }
 
 // ReadTODO reads TODOs on DB.
