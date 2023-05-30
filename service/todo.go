@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"database/sql"
+	"fmt"
 
 	"github.com/TechBowl-japan/go-stations/model"
 )
@@ -26,6 +27,48 @@ func (s *TODOService) CreateTODO(ctx context.Context, subject, description strin
 		confirm = `SELECT subject, description, created_at, updated_at FROM todos WHERE id = ?`
 	)
 
+	//subjectが空の場合はエラーを返す
+	if subject == "" {
+		fmt.Println("subject is empty")
+	}
+
+	//descriptionが空の場合はエラーを返す
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() {
+		if p := recover(); p != nil {
+			tx.Rollback()
+			panic(p)
+		} else if err != nil {
+			tx.Rollback()
+		} else {
+			//これがないとデータベースに反映されない
+			err = tx.Commit()
+		}
+	}()
+
+	// PrepareContextを使用してSQLステートメントを準備
+	stmt, err := tx.PrepareContext(ctx, insert)
+	if err != nil {
+		return nil, err
+	}
+	defer stmt.Close()
+
+	// ExecContextを使用してTODOを保存し、保存されたTODOのIDを取得
+	result, err := stmt.ExecContext(ctx, subject, description)
+	id, err := result.LastInsertId()
+
+	// QueryRowContextを使用して保存したTODOを取得
+	row := s.db.QueryRowContext(ctx, confirm, id)
+
+	var createdTodo model.TODO
+	err = row.Scan(&createdTodo.ID, &createdTodo.Subject, &createdTodo.Description, &createdTodo.CreatedAt)
+	if err != nil {
+		return fmt.Println("row.Scan error: ")
+	}
 	return nil, nil
 }
 
